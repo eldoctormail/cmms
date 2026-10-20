@@ -8,7 +8,7 @@ import {
   useTheme
 } from 'react-native-paper';
 import { useTranslation } from 'react-i18next';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import useAuth from '../hooks/useAuth';
 import debounce from 'lodash.debounce';
 import { SheetManager } from 'react-native-actions-sheet';
@@ -44,6 +44,26 @@ export default function SingleTask({
   const [savingNotes, setSavingNotes] = useState<boolean>(false);
   const { user, hasCreatePermission, hasFeature } = useAuth();
   const [inputValue, setInputValue] = useState<string>(task.value?.toString() || '');
+  // The debounced save below is created once, so it must reach the latest
+  // handleChange through a ref: a stale one PATCHes an outdated copy of the
+  // task and can overwrite notes saved after the checklist was opened.
+  const handleChangeRef = useRef(handleChange);
+  handleChangeRef.current = handleChange;
+  const lastSavedValue = useRef<string | null>(null);
+
+  const debouncedSave = useMemo(
+    () =>
+      debounce((value: string) => {
+        if (value === '') return;
+        lastSavedValue.current = value;
+        handleChangeRef.current?.(value, task.id);
+      }, 1000),
+    [task.id]
+  );
+
+  // Save what was typed if the screen is left before the debounce fires.
+  useEffect(() => () => debouncedSave.flush(), [debouncedSave]);
+
   const changeHandler = (newValue: string) => {
     if (!preview) {
       let formattedValue = newValue;
@@ -52,21 +72,18 @@ export default function SingleTask({
         task.taskBase.taskType === 'NUMBER'
       ) {
         formattedValue = newValue?.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1') ?? '';
-        setInputValue(formattedValue);
-      } else setInputValue(formattedValue);
-      if (formattedValue !== '') handleChange(formattedValue, task.id);
+      }
+      setInputValue(formattedValue);
+      debouncedSave(formattedValue);
     }
   };
 
-  const debouncedChangeHandler = useMemo(
-    () => debounce(changeHandler, 1000),
-    []
-  );
-  
   useEffect(() => {
-  setInputValue(task.value?.toString() || '');
-}, [task.value]);
-  
+    const value = task.value?.toString() || '';
+    // Skip the echo of our own save so it can't undo newer keystrokes.
+    if (value !== lastSavedValue.current) setInputValue(value);
+  }, [task.value]);
+
   const onDropdownValueChange = (value) => {
     !preview &&
       !(task.taskBase.user && task.taskBase.user.id !== user.id) &&
@@ -177,7 +194,6 @@ export default function SingleTask({
       ) : task.taskBase.taskType === 'METER' ||
         task.taskBase.taskType === 'NUMBER' ? (
         <TextInput
-          defaultValue={task.value?.toString()}
           onChangeText={changeHandler}
           label={t('value')}
           value={inputValue}
@@ -187,9 +203,9 @@ export default function SingleTask({
         />
       ) : (
         <TextInput
-          defaultValue={task.value?.toString()}
-          onChangeText={debouncedChangeHandler}
+          onChangeText={changeHandler}
           label={t('value')}
+          value={inputValue}
           mode={'outlined'}
           disabled={task.taskBase.user && task.taskBase.user.id !== user.id}
         />

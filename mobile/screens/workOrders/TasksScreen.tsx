@@ -45,13 +45,9 @@ export default function TasksScreen({
       .then(() => showSnackBar(t('task_update_success'), 'success'))
       .catch(() => showSnackBar(t('task_update_failure'), 'error'));
 
-    const newTasks = tasks.map((task) => {
-      if (task.id === id) {
-        return { ...task, value };
-      }
-      return task;
-    });
-    setTasks(newTasks);
+    setTasks((prevTasks) =>
+      prevTasks.map((task) => (task.id === id ? { ...task, value } : task))
+    );
   }
 
   function handleNoteChange(value: string, id: number) {
@@ -72,12 +68,12 @@ export default function TasksScreen({
 
   function handleSaveNotes(value: string, id: number) {
     const task = tasks.find((task) => task.id === id);
-    return dispatch(patchTask(workOrderId, id, { ...task, notes: value })).then(
-      () => {
+    return dispatch(patchTask(workOrderId, id, { ...task, notes: value }))
+      .then(() => {
         showSnackBar(t('notes_save_success'), 'success');
         toggleNotes(task.id);
-      }
-    );
+      })
+      .catch(() => showSnackBar(t('task_update_failure'), 'error'));
   }
 
   const onImageUploadSuccess = () => {
