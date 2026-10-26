@@ -217,6 +217,8 @@ public class TaskController {
 
         if (optionalTask.isPresent()) {
             checkAccessToTask(optionalTask.get(), user, false);
+            if (isModifiedSince(optionalTask.get().getUpdatedAt(), ifUnmodifiedSince(req)))
+                throw new CustomException("The task was modified by someone else", HttpStatus.CONFLICT);
             Task patchedTask = taskService.update(id, task);
             Collection<Workflow> workflows =
                     workflowService.findByMainConditionAndCompany(WFMainCondition.TASK_UPDATED,
@@ -237,6 +239,26 @@ public class TaskController {
             return new ResponseEntity<>(new SuccessResponse(true, "Deleted successfully"),
                     HttpStatus.OK);
         } else throw new CustomException("Task not found", HttpStatus.NOT_FOUND);
+    }
+
+    /**
+     * Value of the If-Unmodified-Since header in epoch milliseconds, or -1 when
+     * absent or invalid (an invalid date must be ignored, RFC 9110 13.1.4).
+     * Clients that edit tasks offline send the last modification date they saw,
+     * so an older change doesn't silently overwrite a newer one.
+     */
+    static long ifUnmodifiedSince(HttpServletRequest req) {
+        try {
+            return req.getDateHeader("If-Unmodified-Since");
+        } catch (IllegalArgumentException e) {
+            return -1;
+        }
+    }
+
+    /** HTTP dates have second precision, so compare at that precision. */
+    static boolean isModifiedSince(Date updatedAt, long ifUnmodifiedSince) {
+        return ifUnmodifiedSince >= 0 && updatedAt != null
+                && updatedAt.getTime() / 1000 > ifUnmodifiedSince / 1000;
     }
 
     private void checkAccessToTask(Task task, User user, boolean view) {

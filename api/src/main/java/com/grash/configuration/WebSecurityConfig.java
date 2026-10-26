@@ -46,7 +46,8 @@ public class WebSecurityConfig {
     private boolean ldapEnabled;
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http, ApiKeyAuthFilter apiKeyAuthFilter) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, ApiKeyAuthFilter apiKeyAuthFilter,
+                                           IdempotencyFilter idempotencyFilter) throws Exception {
 
         // Disable CSRF (cross site request forgery)
         http.csrf(AbstractHttpConfigurer::disable);
@@ -115,6 +116,8 @@ public class WebSecurityConfig {
         http.addFilterBefore(new JwtTokenFilter(jwtTokenProvider), UsernamePasswordAuthenticationFilter.class);
         http.addFilterBefore(apiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class);
         http.addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class);
+        // After authentication: idempotency keys are scoped to the user.
+        http.addFilterAfter(idempotencyFilter, UsernamePasswordAuthenticationFilter.class);
 
         http.headers(headers -> headers
                 .frameOptions(HeadersConfigurer.FrameOptionsConfig::deny)

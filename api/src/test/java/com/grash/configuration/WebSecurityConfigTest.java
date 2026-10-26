@@ -6,6 +6,7 @@ import com.grash.security.CustomUserDetailsService;
 import com.grash.security.JwtTokenProvider;
 import com.grash.security.OAuth2AuthenticationFailureHandler;
 import com.grash.security.OAuth2AuthenticationSuccessHandler;
+import com.grash.security.IdempotencyFilter;
 import com.grash.security.RateLimitFilter;
 import com.grash.service.LicenseService;
 import org.junit.jupiter.api.BeforeEach;
@@ -141,7 +142,8 @@ class WebSecurityConfigTest {
         sharedObjects.put(ApplicationContext.class, realWebContext());
         HttpSecurity http = new HttpSecurity(objectPostProcessor, authBuilder, sharedObjects);
 
-        SecurityFilterChain chain = webSecurityConfig.filterChain(http, apiKeyAuthFilter);
+        SecurityFilterChain chain = webSecurityConfig.filterChain(http, apiKeyAuthFilter,
+                mock(IdempotencyFilter.class));
 
         assertNotNull(chain);
     }

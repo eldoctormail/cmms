@@ -3,6 +3,7 @@ package com.grash.controller;
 import com.grash.exception.RestExceptionHandlerController;
 import com.grash.repository.ApiKeyRepository;
 import com.grash.security.ClientIpResolver;
+import com.grash.service.IdempotencyService;
 import com.grash.service.LicenseService;
 import com.grash.service.RateLimiterService;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -20,4 +21,7 @@ public class AbstractControllerTest {
     protected RateLimiterService rateLimiterService;
     @MockitoBean
     private ClientIpResolver clientIpResolver;
+    // IdempotencyFilter is a @Component filter, so @WebMvcTest slices load it.
+    @MockitoBean
+    private IdempotencyService idempotencyService;
 }
