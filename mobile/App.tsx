@@ -45,6 +45,7 @@ import subscriptionPlan from './slices/subscriptionPlan';
 import { isNumeric } from './utils/validators';
 import { customTheme } from './custom-theme';
 import { RootLayout } from './components/RootLayout';
+import { OfflineProvider } from './contexts/OfflineContext';
 import { ReviewModal } from './components/ReviewModal';
 import { Subscription } from 'expo-notifications';
 
@@ -144,23 +145,25 @@ export default Sentry.wrap(function App() {
         <Provider store={store}>
           <PersistGate loading={null} persistor={persistor}>
             <AuthProvider>
-              <CompanySettingsProvider>
-                <PaperProvider theme={customTheme}>
-                  <CustomSnackbarProvider>
-                    <SheetProvider>
-                      <RootLayout>
-                        <FlashMessage
-                          position="top"
-                          statusBarHeight={Constants.statusBarHeight}
-                        />
-                        <Navigation colorScheme={colorScheme} />
-                        <ReviewModal />
-                      </RootLayout>
-                      <StatusBar />
-                    </SheetProvider>
-                  </CustomSnackbarProvider>
-                </PaperProvider>
-              </CompanySettingsProvider>
+              <OfflineProvider>
+                <CompanySettingsProvider>
+                  <PaperProvider theme={customTheme}>
+                    <CustomSnackbarProvider>
+                      <SheetProvider>
+                        <RootLayout>
+                          <FlashMessage
+                            position="top"
+                            statusBarHeight={Constants.statusBarHeight}
+                          />
+                          <Navigation colorScheme={colorScheme} />
+                          <ReviewModal />
+                        </RootLayout>
+                        <StatusBar />
+                      </SheetProvider>
+                    </CustomSnackbarProvider>
+                  </PaperProvider>
+                </CompanySettingsProvider>
+              </OfflineProvider>
             </AuthProvider>
           </PersistGate>
         </Provider>

@@ -9,13 +9,15 @@ import { configureStore } from '@reduxjs/toolkit';
 import rootReducer from './rootReducer';
 import { ImportResponse } from '../models/imports';
 import { persistReducer, persistStore } from 'redux-persist';
-import storage from 'redux-persist/lib/storage';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import fileSystemStorage, {
+  removeLegacyPersistedState
+} from '../utils/fileSystemStorage';
 
 const persistConfig = {
   key: 'root',
-  storage: AsyncStorage
+  storage: fileSystemStorage
 };
+removeLegacyPersistedState(`persist:${persistConfig.key}`);
 const persistedReducer = persistReducer(persistConfig, rootReducer);
 
 const store = configureStore({

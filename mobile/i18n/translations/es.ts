@@ -1533,6 +1533,12 @@ const locale = {
   operation_success: 'La operación fue exitosa',
   edit_reading: 'Editar lectura',
   are_you_sure_delete_reading: '¿Está seguro de que desea eliminar esta lectura?',
-  conflict_retry: 'El recurso fue modificado por otra solicitud. Por favor, inténtelo de nuevo en 5 segundos.'
+  conflict_retry: 'El recurso fue modificado por otra solicitud. Por favor, inténtelo de nuevo en 5 segundos.',
+  offline_banner_synced:
+    'Sin conexión. Mostrando datos guardados el {{date}}. Los cambios requieren conexión.',
+  offline_banner_never_synced:
+    'Sin conexión. Todavía no hay datos guardados para usar sin conexión.',
+  offline_work_orders_hint:
+    'Mostrando tus órdenes de trabajo abiertas guardadas para usar sin conexión. Los filtros y la búsqueda requieren conexión.'
 };
 export default locale;

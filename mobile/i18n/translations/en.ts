@@ -1503,6 +1503,12 @@ const locale = {
     'Discard unsaved changes?\nIf you leave now, you will lose unsaved changes',
   edit_reading: 'Edit reading',
   are_you_sure_delete_reading: 'Are you sure to delete this reading?',
-  conflict_retry: 'The resource was modified by another request. Please retry in 5 seconds.'
+  conflict_retry: 'The resource was modified by another request. Please retry in 5 seconds.',
+  offline_banner_synced:
+    'Offline. Showing data saved on {{date}}. Changes need a connection.',
+  offline_banner_never_synced:
+    'Offline. No data has been saved for offline use yet.',
+  offline_work_orders_hint:
+    'Showing your open work orders saved for offline use. Filters and search need a connection.'
 };
 export default locale;

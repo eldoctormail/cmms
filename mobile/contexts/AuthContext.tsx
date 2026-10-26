@@ -8,7 +8,17 @@ import {
   useState
 } from 'react';
 import { OwnUser, UserResponseDTO } from '../models/user';
-import api, { authHeader, refreshAccessToken } from '../utils/api';
+import api, {
+  authHeader,
+  isNetworkError,
+  refreshAccessToken
+} from '../utils/api';
+import NetInfo from '@react-native-community/netinfo';
+import {
+  clearOfflineSession,
+  loadOfflineSession,
+  saveOfflineSession
+} from '../utils/offlineSession';
 import { verify } from '../utils/jwt';
 import { Alert, AppState, Linking, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -65,6 +75,12 @@ interface AuthState {
   userSettings: UserSettings | null;
   companySettings: CompanySettings | null;
   reviewEligible: boolean;
+  /**
+   * The session was restored from the device cache because the server could
+   * not be reached at startup. Server-dependent features may fail until it is
+   * refreshed, which happens automatically when connectivity comes back.
+   */
+  isOfflineSession: boolean;
 }
 
 export type FieldConfigurationsType = 'workOrder' | 'request';
@@ -136,6 +152,7 @@ type InitializeAction = {
     user: UserResponseDTO | null;
     companySettings: CompanySettings | null;
     company: Company | null;
+    offline?: boolean;
   };
 };
 
@@ -271,7 +288,8 @@ const initialAuthState: AuthState = {
   company: null,
   userSettings: null,
   companySettings: null,
-  reviewEligible: false
+  reviewEligible: false,
+  isOfflineSession: false
 };
 
 const setSession = (
@@ -300,7 +318,8 @@ const handlers: Record<
   (state: AuthState, action: Action) => AuthState
 > = {
   INITIALIZE: (state: AuthState, action: InitializeAction): AuthState => {
-    const { isAuthenticated, user, companySettings, company } = action.payload;
+    const { isAuthenticated, user, companySettings, company, offline } =
+      action.payload;
 
     return {
       ...state,
@@ -308,7 +327,8 @@ const handlers: Record<
       isInitialized: true,
       user,
       companySettings,
-      company
+      company,
+      isOfflineSession: !!offline
     };
   },
   LOGIN: (state: AuthState, action: LoginAction): AuthState => {
@@ -319,13 +339,15 @@ const handlers: Record<
       isAuthenticated: true,
       user,
       companySettings,
-      company
+      company,
+      isOfflineSession: false
     };
   },
   LOGOUT: (state: AuthState): AuthState => ({
     ...state,
     isAuthenticated: false,
-    user: null
+    user: null,
+    isOfflineSession: false
   }),
   REGISTER: (state: AuthState, action: RegisterAction): AuthState => {
     const { user, companySettings, company } = action.payload;
@@ -546,6 +568,7 @@ export const AuthProvider: FC<AuthProviderProps> = (props) => {
   const { children } = props;
   const { t } = useTranslation();
   const [state, dispatch] = useReducer(reducer, initialAuthState);
+  const offlineSessionRef = useRef<boolean>(false);
   const appState = useRef(AppState.currentState);
   const [openedSettings, setOpenedSettings] = useState<boolean>(false);
   const globalDispatch = useDispatch();
@@ -739,6 +762,51 @@ export const AuthProvider: FC<AuthProviderProps> = (props) => {
       console.error('Review eligibility check failed', e);
     }
   };
+  /**
+   * Restores the last cached session when the server can't be reached, so a
+   * technician can open the app without signal and browse the work orders
+   * synced for offline use. Returns false if there is nothing to restore.
+   */
+  const initializeOffline = async (): Promise<boolean> => {
+    const session = await loadOfflineSession();
+    if (!session) return false;
+    const { user, company } = session;
+    switchLanguage({
+      lng:
+        user.language?.toLowerCase() ||
+        company.companySettings.generalPreferences.language.toLowerCase()
+    });
+    offlineSessionRef.current = true;
+    dispatch({
+      type: 'INITIALIZE',
+      payload: {
+        isAuthenticated: true,
+        user,
+        companySettings: company.companySettings,
+        company,
+        offline: true
+      }
+    });
+    return true;
+  };
+  const initializeUnauthenticated = async () => {
+    await clearOfflineSession();
+    if (offlineSessionRef.current) {
+      // The cached session turned out to be revoked or expired: drop the data
+      // that was kept on the device for it.
+      offlineSessionRef.current = false;
+      globalDispatch(revertAll());
+    }
+    dispatch({
+      type: 'INITIALIZE',
+      payload: {
+        isAuthenticated: false,
+        user: null,
+        companySettings: null,
+        company: null
+      }
+    });
+  };
   const getInfos = async (): Promise<void> => {
     // AsyncStorage.clear();
 
@@ -747,12 +815,17 @@ export const AuthProvider: FC<AuthProviderProps> = (props) => {
       const refreshToken = await AsyncStorage.getItem('refreshToken');
 
       let authenticated = false;
+      let serverUnreachable = false;
       if (accessToken && (await verify(accessToken))) {
         authenticated = true;
       } else if (refreshToken) {
         const refreshed = await refreshAccessToken();
         if (refreshed) {
           authenticated = true;
+        } else {
+          // refreshAccessToken only discards the refresh token when the
+          // server rejects it; if it is still there the failure was transient.
+          serverUnreachable = !!(await AsyncStorage.getItem('refreshToken'));
         }
       }
 
@@ -763,6 +836,8 @@ export const AuthProvider: FC<AuthProviderProps> = (props) => {
         const user = await updateUserInfos();
         const company = await api.get<Company>(`companies/${user.companyId}`);
         await setupUser(user, company.companySettings);
+        await saveOfflineSession({ user, company });
+        offlineSessionRef.current = false;
         dispatch({
           type: 'INITIALIZE',
           payload: {
@@ -772,28 +847,13 @@ export const AuthProvider: FC<AuthProviderProps> = (props) => {
             company
           }
         });
-      } else {
-        dispatch({
-          type: 'INITIALIZE',
-          payload: {
-            isAuthenticated: false,
-            user: null,
-            companySettings: null,
-            company: null
-          }
-        });
+      } else if (!(serverUnreachable && (await initializeOffline()))) {
+        await initializeUnauthenticated();
       }
     } catch (err) {
+      if (isNetworkError(err) && (await initializeOffline())) return;
       console.error(err);
-      dispatch({
-        type: 'INITIALIZE',
-        payload: {
-          isAuthenticated: false,
-          user: null,
-          companySettings: null,
-          company: null
-        }
-      });
+      await initializeUnauthenticated();
     }
   };
   const switchAccount = async (id: number): Promise<void> => {
@@ -809,6 +869,8 @@ export const AuthProvider: FC<AuthProviderProps> = (props) => {
     const user = await updateUserInfos();
     const company = await api.get<Company>(`companies/${user.companyId}`);
     await setupUser(user, company.companySettings);
+    await saveOfflineSession({ user, company });
+    offlineSessionRef.current = false;
     dispatch({
       type: 'LOGIN',
       payload: {
@@ -851,6 +913,11 @@ export const AuthProvider: FC<AuthProviderProps> = (props) => {
       // Always clear the local session, even when the server is unreachable
       // (offline / dead zone) — otherwise the user is stuck logged in.
       setSession(null, null);
+      offlineSessionRef.current = false;
+      await clearOfflineSession();
+      // Work orders are now kept on the device for offline use; don't leave
+      // them behind for whoever uses the phone next.
+      globalDispatch(revertAll());
       Sentry.setUser(null);
       dispatch({ type: 'LOGOUT' });
     }
@@ -1294,6 +1361,26 @@ export const AuthProvider: FC<AuthProviderProps> = (props) => {
   useEffect(() => {
     getInfos();
   }, []);
+
+  // A session restored offline is replaced by a real one as soon as the server
+  // is reachable again (or dropped, if the refresh token was revoked meanwhile).
+  useEffect(() => {
+    if (!state.isOfflineSession) return;
+    let refreshing = false;
+    const unsubscribe = NetInfo.addEventListener((netState) => {
+      if (
+        !refreshing &&
+        netState.isConnected &&
+        netState.isInternetReachable !== false
+      ) {
+        refreshing = true;
+        getInfos().finally(() => {
+          refreshing = false;
+        });
+      }
+    });
+    return unsubscribe;
+  }, [state.isOfflineSession]);
 
   return (
     <AuthContext.Provider

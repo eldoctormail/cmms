@@ -69,6 +69,17 @@ const slice = createSlice({
         state.workOrderInfos[id] = { ...state.workOrderInfos[id], workOrder };
       } else state.workOrderInfos[id] = { workOrder };
     },
+    cacheWorkOrderDetails(
+      state: WorkOrderState,
+      action: PayloadAction<{ workOrders: WorkOrder[] }>
+    ) {
+      action.payload.workOrders.forEach((workOrder) => {
+        state.workOrderInfos[workOrder.id] = {
+          ...state.workOrderInfos[workOrder.id],
+          workOrder
+        };
+      });
+    },
     addWorkOrder(
       state: WorkOrderState,
       action: PayloadAction<{ workOrder: WorkOrder }>
@@ -134,6 +145,7 @@ const slice = createSlice({
 });
 
 export const reducer = slice.reducer;
+export const { cacheWorkOrderDetails } = slice.actions;
 
 export const getWorkOrders =
   (criteria: SearchCriteria): AppThunk =>
@@ -168,14 +180,19 @@ export const getWorkOrderDetails =
   (id: number): AppThunk =>
   async (dispatch) => {
     dispatch(slice.actions.setLoadingGet({ loading: true }));
-    const workOrder = await api.get<WorkOrder>(`${basePath}/${id}`);
-    dispatch(
-      slice.actions.getWorkOrderDetails({
-        id,
-        workOrder
-      })
-    );
-    dispatch(slice.actions.setLoadingGet({ loading: false }));
+    try {
+      const workOrder = await api.get<WorkOrder>(`${basePath}/${id}`);
+      dispatch(
+        slice.actions.getWorkOrderDetails({
+          id,
+          workOrder
+        })
+      );
+    } finally {
+      // Without this a failed request (e.g. no connectivity) leaves loadingGet
+      // stuck, which keeps the work order list spinner and blocks pagination.
+      dispatch(slice.actions.setLoadingGet({ loading: false }));
+    }
   };
 export const addWorkOrder =
   (workOrder): AppThunk =>

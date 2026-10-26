@@ -48,6 +48,7 @@ import { PermissionEntity } from '../../models/role';
 import useAuth from '../../hooks/useAuth';
 import { controlTimer, getLabors } from '../../slices/labor';
 import { useDispatch, useSelector } from '../../store';
+import OfflineBanner from '../../components/OfflineBanner';
 import { durationToHours } from '../../utils/formatters';
 import {
   editWOPartQuantities,
@@ -820,6 +821,7 @@ export default function WODetailsScreen({
                 />
               }
             >
+              <OfflineBanner />
               <Text style={{ marginTop: 5 }} variant="displaySmall">
                 {workOrder.title}
               </Text>

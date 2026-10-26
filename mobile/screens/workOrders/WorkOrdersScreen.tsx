@@ -43,6 +43,8 @@ import QuickFilter from './components/QuickFilter';
 import { useAppTheme } from '../../custom-theme';
 import { getUserInitials } from '../../utils/displayers';
 import { UserMiniDTO } from '../../models/user';
+import { useOffline } from '../../contexts/OfflineContext';
+import OfflineBanner from '../../components/OfflineBanner';
 
 export default function WorkOrdersScreen({
   navigation,
@@ -53,6 +55,13 @@ export default function WorkOrdersScreen({
   const { workOrders, loadingGet, currentPageNum, lastPage } = useSelector(
     (state) => state.workOrders
   );
+  const { isOffline } = useOffline();
+  const offlineWorkOrders = useSelector((state) => state.offline.workOrders);
+  // Without connectivity the server-side filters can't run: show the open work
+  // orders synced for offline use instead of a stale, arbitrarily filtered page.
+  const displayedWorkOrders = isOffline
+    ? offlineWorkOrders
+    : workOrders.content;
   const theme = useAppTheme();
   const dispatch = useDispatch();
   const [searchQuery, setSearchQuery] = useState('');
@@ -109,6 +118,7 @@ export default function WorkOrdersScreen({
       fromHomeInit.current = true;
       return;
     }
+    if (isOffline) return;
     dispatch(
       getWorkOrders({
         ...criteria,
@@ -118,7 +128,7 @@ export default function WorkOrdersScreen({
       })
     );
     fromHomeInit.current = true;
-  }, [criteria]);
+  }, [criteria, isOffline]);
 
   useEffect(() => {
     const filterFields = route.params?.filterFields ?? [];
@@ -171,7 +181,7 @@ export default function WorkOrdersScreen({
           style={styles.scrollView}
           onScroll={({ nativeEvent }) => {
             if (isCloseToBottom(nativeEvent)) {
-              if (!loadingGet && !lastPage)
+              if (!isOffline && !loadingGet && !lastPage)
                 dispatch(getMoreWorkOrders(criteria, currentPageNum + 1));
             }
           }}
@@ -258,8 +268,9 @@ export default function WorkOrdersScreen({
               />
             )}
           </ScrollView>
-          {!!workOrders.content.length ? (
-            workOrders.content.map((workOrder) => {
+          <OfflineBanner hint={t('offline_work_orders_hint')} />
+          {!!displayedWorkOrders.length ? (
+            displayedWorkOrders.map((workOrder) => {
               // Combine primaryUser and assignedTo without duplicates
               const allUsers: UserMiniDTO[] = [];
               const userIds = new Set();

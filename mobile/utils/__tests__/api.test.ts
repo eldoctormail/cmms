@@ -29,7 +29,10 @@ describe('refreshAccessToken', () => {
 
   it('stores the new tokens on success', async () => {
     mockFetch.mockResolvedValueOnce(
-      jsonResponse(200, { accessToken: 'new-access', refreshToken: 'new-refresh' })
+      jsonResponse(200, {
+        accessToken: 'new-access',
+        refreshToken: 'new-refresh'
+      })
     );
 
     await expect(refreshAccessToken()).resolves.toBe(true);
