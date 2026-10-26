@@ -1525,6 +1525,11 @@ const locale = {
   discard: 'Discard',
   retry: 'Retry',
   logout_pending_changes_warning:
-    'There are {{count}} changes not sent yet. If you log out now they will be lost.'
+    'There are {{count}} changes not sent yet. If you log out now they will be lost.',
+  outbox_conflict:
+    'Someone else changed it after you. Overwrite with your change or discard it.',
+  outbox_conflict_snackbar:
+    'Someone else changed this task. Review it in the work order.',
+  overwrite: 'Overwrite'
 };
 export default locale;

@@ -21,6 +21,9 @@ import laborSlice from './labor';
  * from the server never hides a change that is still waiting to be sent.
  */
 
+/** Error stored on entries rejected because the server data changed. */
+export const CONFLICT_ERROR = 'conflict_error';
+
 export type OutboxOperation =
   | {
       type: 'PATCH_TASK';
@@ -53,6 +56,11 @@ export interface OutboxEntry {
   attempts: number;
   /** Error message of a failed entry, shown so the user can decide. */
   error?: string;
+  /**
+   * Send a task change without checking whether the task changed on the
+   * server meanwhile: the user chose to overwrite after a conflict.
+   */
+  force?: boolean;
 }
 
 interface OutboxState {
@@ -137,12 +145,43 @@ const slice = createSlice({
         entry.error = action.payload.error;
       }
     },
-    retry(state: OutboxState, action: PayloadAction<{ id: string }>) {
+    retry(
+      state: OutboxState,
+      action: PayloadAction<{ id: string; force?: boolean }>
+    ) {
       const entry = state.entries.find((e) => e.id === action.payload.id);
       if (entry) {
         entry.status = 'pending';
         entry.error = undefined;
+        if (action.payload.force) entry.force = true;
       }
+    },
+    /**
+     * After a change of a task is accepted, later queued changes of the same
+     * task were made on top of it: move their precondition to the new
+     * modification date so they don't conflict with the user's own change.
+     * Entries already attempted keep their body, which their idempotency key
+     * may be bound to on the server.
+     */
+    rebaseTask(
+      state: OutboxState,
+      action: PayloadAction<{
+        taskId: number;
+        updatedAt: string;
+        sentId: string;
+      }>
+    ) {
+      const { taskId, updatedAt, sentId } = action.payload;
+      state.entries.forEach((entry) => {
+        if (
+          entry.id !== sentId &&
+          entry.attempts === 0 &&
+          entry.op.type === 'PATCH_TASK' &&
+          entry.op.taskId === taskId
+        ) {
+          entry.op.body = { ...entry.op.body, updatedAt };
+        }
+      });
     }
   }
 });
@@ -157,11 +196,17 @@ export const isTransientError = (error: any): boolean => {
   if (isNetworkError(error)) return true;
   const status = error?.status;
   // 401: the session could not be refreshed now; keep the change for later.
-  return status === 401 || status === 429 || (status >= 500 && status < 600);
+  // 409 with Retry-After: the same request is still running on the server.
+  return (
+    status === 401 ||
+    status === 429 ||
+    (status === 409 && !!error?.retryAfter) ||
+    (status >= 500 && status < 600)
+  );
 };
 
 const errorMessage = (error: any): string => {
-  if (error?.status === 409) return 'conflict_error';
+  if (error?.status === 409) return CONFLICT_ERROR;
   try {
     return JSON.parse(error?.message)?.message ?? String(error?.message);
   } catch {
@@ -176,15 +221,31 @@ const send =
     const { op } = entry;
     switch (op.type) {
       case 'PATCH_TASK': {
+        // Reject the change (409) if someone else modified the task after the
+        // version the user edited, instead of silently overwriting it.
+        const precondition =
+          !entry.force && op.body?.updatedAt
+            ? {
+                'If-Unmodified-Since': new Date(op.body.updatedAt).toUTCString()
+              }
+            : undefined;
         const task = await api.patch<Task>(
           `tasks/${op.taskId}`,
           op.body,
-          options,
+          { ...options, extraHeaders: precondition },
           true
         );
         dispatch(
           taskSlice.actions.patchTask({ workOrderId: op.workOrderId, task })
         );
+        if (task?.updatedAt)
+          dispatch(
+            slice.actions.rebaseTask({
+              taskId: op.taskId,
+              updatedAt: task.updatedAt,
+              sentId: entry.id
+            })
+          );
         return;
       }
       case 'CREATE_COMMENT': {
@@ -262,12 +323,14 @@ export const processOutbox = (): AppThunk => (dispatch) => {
   return processing;
 };
 
-export type SubmitResult = 'sent' | 'queued';
+export type SubmitResult = 'sent' | 'queued' | 'conflict';
 
 /**
  * Queues a change and tries to send it right away. Resolves 'sent' when the
- * server accepted it and 'queued' when it will be sent once the server is
- * reachable. If the server rejects it, the change is dropped and the error is
+ * server accepted it, 'queued' when it will be sent once the server is
+ * reachable, and 'conflict' when someone else changed the same data meanwhile
+ * (the change stays in the queue so the user can overwrite or discard it). If
+ * the server rejects it otherwise, the change is dropped and the error is
  * thrown, as a direct request would.
  */
 export const submitOperation =
@@ -295,6 +358,8 @@ export const submitOperation =
           )
         : undefined);
     if (!entry) return 'sent';
+    if (entry.status === 'failed' && entry.error === CONFLICT_ERROR)
+      return 'conflict';
     if (entry.status === 'failed') {
       dispatch(slice.actions.remove({ id: entry.id }));
       const error = new Error(JSON.stringify({ message: entry.error }));
@@ -305,9 +370,9 @@ export const submitOperation =
 
 /** Puts a failed entry back in the queue and tries again. */
 export const retryEntry =
-  (id: string): AppThunk =>
+  (id: string, force = false): AppThunk =>
   async (dispatch) => {
-    dispatch(slice.actions.retry({ id }));
+    dispatch(slice.actions.retry({ id, force }));
     await dispatch(processOutbox());
   };
 

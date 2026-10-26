@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import api, { refreshAccessToken } from '../api';
+import api, { refreshAccessToken, setConflictErrorHandler } from '../api';
 
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock')
@@ -95,5 +95,53 @@ describe('idempotency key', () => {
     expect(mockFetch.mock.calls[0][1].headers).not.toHaveProperty(
       'Idempotency-Key'
     );
+  });
+});
+
+describe('extra headers and conflicts', () => {
+  beforeEach(async () => {
+    mockFetch.mockReset();
+    await AsyncStorage.clear();
+    await AsyncStorage.setItem('accessToken', 'token');
+  });
+
+  it('adds extra headers to the default ones', async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse(200, {}));
+    await api.patch(
+      'tasks/1',
+      {},
+      {
+        extraHeaders: { 'If-Unmodified-Since': 'Mon, 26 Oct 2026 10:00:00 GMT' }
+      },
+      true
+    );
+    expect(mockFetch.mock.calls[0][1].headers).toMatchObject({
+      Authorization: 'Bearer token',
+      'If-Unmodified-Since': 'Mon, 26 Oct 2026 10:00:00 GMT'
+    });
+  });
+
+  it('exposes Retry-After and lets outbox requests handle conflicts', async () => {
+    const handler = jest.fn();
+    const unsubscribe = setConflictErrorHandler(handler);
+    mockFetch.mockResolvedValueOnce({
+      ...jsonResponse(409),
+      headers: { get: (name: string) => (name === 'Retry-After' ? '1' : null) }
+    });
+
+    await expect(
+      api.post('comments', {}, { idempotencyKey: 'k' })
+    ).rejects.toMatchObject({ status: 409, retryAfter: '1' });
+    expect(handler).not.toHaveBeenCalled();
+
+    mockFetch.mockResolvedValueOnce({
+      ...jsonResponse(409),
+      headers: { get: () => null }
+    });
+    await expect(api.post('comments', {})).rejects.toMatchObject({
+      status: 409
+    });
+    expect(handler).toHaveBeenCalledTimes(1);
+    unsubscribe();
   });
 });

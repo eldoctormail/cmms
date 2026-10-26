@@ -10,6 +10,8 @@ type Options = RequestInit & {
    * response (e.g. from the offline outbox) can be recognized server side.
    */
   idempotencyKey?: string;
+  /** Added to the default headers (unlike `headers`, which replaces them). */
+  extraHeaders?: Record<string, string>;
 };
 
 let refreshPromise: Promise<boolean> | null = null;
@@ -92,14 +94,16 @@ async function doFetch<T>(
   options: Options,
   retried: boolean
 ): Promise<T> {
-  const { idempotencyKey, ...init } = options ?? {};
+  const { idempotencyKey, extraHeaders, ...init } = options ?? {};
   const baseHeaders = (init.headers ?? (await authHeader(false))) as Record<
     string,
     string
   >;
-  const headers = idempotencyKey
-    ? { ...baseHeaders, 'Idempotency-Key': idempotencyKey }
-    : baseHeaders;
+  const headers = {
+    ...baseHeaders,
+    ...extraHeaders,
+    ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {})
+  };
   const response = await fetch(url, { ...init, headers });
   if (!response.ok) {
     if (response.status === 401 && !retried && !isRefreshRequest(url)) {
@@ -109,9 +113,12 @@ async function doFetch<T>(
       }
     }
     if (response.status === 409) {
-      if (onConflictError) onConflictError();
+      // Requests from the offline outbox report conflicts in their own UI.
+      if (onConflictError && !idempotencyKey) onConflictError();
       const conflict = new Error('conflict_error');
       (conflict as any).status = 409;
+      // Set when the same request is still being processed: retry later.
+      (conflict as any).retryAfter = response.headers?.get?.('Retry-After');
       throw conflict;
     }
     let body: any = null;

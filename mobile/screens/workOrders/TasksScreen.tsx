@@ -51,7 +51,9 @@ export default function TasksScreen({
       })
     )
       .then((result: SubmitResult) =>
-        result === 'queued'
+        result === 'conflict'
+          ? showSnackBar(t('outbox_conflict_snackbar'), 'error')
+          : result === 'queued'
           ? showSnackBar(t('change_queued_offline'), 'success')
           : showSnackBar(t('task_update_success'), 'success')
       )
@@ -92,6 +94,10 @@ export default function TasksScreen({
         body: { ...task, notes: value }
       })
     ).then((result: SubmitResult) => {
+      if (result === 'conflict') {
+        showSnackBar(t('outbox_conflict_snackbar'), 'error');
+        return;
+      }
       showSnackBar(
         result === 'queued'
           ? t('change_queued_offline')

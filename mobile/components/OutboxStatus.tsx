@@ -4,7 +4,12 @@ import { Button, Icon, Text } from 'react-native-paper';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from '../store';
 import { useAppTheme } from '../custom-theme';
-import { discardEntry, OutboxEntry, retryEntry } from '../slices/outbox';
+import {
+  CONFLICT_ERROR,
+  discardEntry,
+  OutboxEntry,
+  retryEntry
+} from '../slices/outbox';
 
 const describe = (entry: OutboxEntry, t: (key: string, o?: any) => string) => {
   const { op } = entry;
@@ -71,8 +76,8 @@ export default function OutboxStatus({ workOrderId }: { workOrderId: number }) {
           </View>
           {!!entry.error && (
             <Text variant="bodySmall" style={{ color: theme.colors.error }}>
-              {entry.error === 'conflict_error'
-                ? t('conflict_retry')
+              {entry.error === CONFLICT_ERROR
+                ? t('outbox_conflict')
                 : entry.error}
             </Text>
           )}
@@ -80,9 +85,19 @@ export default function OutboxStatus({ workOrderId }: { workOrderId: number }) {
             <Button compact onPress={() => dispatch(discardEntry(entry.id))}>
               {t('discard')}
             </Button>
-            <Button compact onPress={() => dispatch(retryEntry(entry.id))}>
-              {t('retry')}
-            </Button>
+            {entry.error === CONFLICT_ERROR ? (
+              // Someone else changed it: the user decides whose version wins.
+              <Button
+                compact
+                onPress={() => dispatch(retryEntry(entry.id, true))}
+              >
+                {t('overwrite')}
+              </Button>
+            ) : (
+              <Button compact onPress={() => dispatch(retryEntry(entry.id))}>
+                {t('retry')}
+              </Button>
+            )}
           </View>
         </View>
       ))}

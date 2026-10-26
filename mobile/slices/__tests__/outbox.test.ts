@@ -2,6 +2,7 @@ import { combineReducers, configureStore } from '@reduxjs/toolkit';
 import api from '../../utils/api';
 import { revertAll } from '../../utils/redux';
 import {
+  CONFLICT_ERROR,
   discardEntry,
   mergePendingComments,
   mergePendingLabors,
@@ -213,6 +214,90 @@ describe('outbox', () => {
     await store.dispatch(submitOperation(commentOp('a')));
     store.dispatch(revertAll());
     expect(store.getState().outbox.entries).toHaveLength(0);
+  });
+});
+
+describe('outbox conflicts', () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  const datedTaskOp = (taskId: number, value: string, updatedAt: string) => ({
+    type: 'PATCH_TASK' as const,
+    workOrderId: 1,
+    taskId,
+    body: { ...task(taskId, value), updatedAt }
+  });
+  const conflict = () => httpError(409);
+  const headersOf = (call: any[]) => call[2]?.extraHeaders;
+
+  it('sends the version the user edited as If-Unmodified-Since', async () => {
+    mockedApi.patch.mockImplementation(async (_u, body: any) => body);
+    const store = makeStore();
+    await store.dispatch(
+      submitOperation(datedTaskOp(10, 'COMPLETE', '2026-10-26T10:00:00.000Z'))
+    );
+    expect(headersOf(mockedApi.patch.mock.calls[0])).toEqual({
+      'If-Unmodified-Since': 'Mon, 26 Oct 2026 10:00:00 GMT'
+    });
+  });
+
+  it('keeps a conflicting change so the user can overwrite it', async () => {
+    mockedApi.patch.mockRejectedValueOnce(conflict());
+    const store = makeStore();
+
+    await expect(
+      store.dispatch(
+        submitOperation(datedTaskOp(10, 'COMPLETE', '2026-10-26T10:00:00Z'))
+      )
+    ).resolves.toBe('conflict');
+    const [entry] = store.getState().outbox.entries;
+    expect(entry).toMatchObject({ status: 'failed', error: CONFLICT_ERROR });
+
+    mockedApi.patch.mockImplementation(async (_u, body: any) => body);
+    await store.dispatch(retryEntry(entry.id, true));
+
+    expect(store.getState().outbox.entries).toHaveLength(0);
+    expect(headersOf(mockedApi.patch.mock.calls[1])).toBeUndefined();
+  });
+
+  it('treats "still processing" conflicts as transient', async () => {
+    const busy = conflict();
+    (busy as any).retryAfter = '1';
+    mockedApi.post.mockRejectedValue(busy);
+    const store = makeStore();
+
+    await expect(store.dispatch(submitOperation(commentOp('x')))).resolves.toBe(
+      'queued'
+    );
+    expect(store.getState().outbox.entries[0].status).toBe('pending');
+  });
+
+  it("moves later changes of a task past the user's own accepted change", async () => {
+    const store = makeStore();
+    mockedApi.patch.mockRejectedValue(networkError());
+    await store.dispatch(
+      submitOperation(datedTaskOp(10, 'IN_PROGRESS', '2026-10-26T10:00:00Z'))
+    );
+    // Not folded: the first change was already attempted.
+    await store.dispatch(
+      submitOperation(datedTaskOp(10, 'COMPLETE', '2026-10-26T10:00:00Z'))
+    );
+    expect(store.getState().outbox.entries).toHaveLength(2);
+
+    mockedApi.patch.mockReset();
+    mockedApi.patch.mockImplementation(async (_u, body: any) => ({
+      ...body,
+      updatedAt: '2026-10-26T11:30:00.000Z'
+    }));
+    await store.dispatch(processOutbox());
+
+    expect(store.getState().outbox.entries).toHaveLength(0);
+    const [first, second] = mockedApi.patch.mock.calls;
+    expect(headersOf(first)['If-Unmodified-Since']).toBe(
+      'Mon, 26 Oct 2026 10:00:00 GMT'
+    );
+    expect(headersOf(second)['If-Unmodified-Since']).toBe(
+      'Mon, 26 Oct 2026 11:30:00 GMT'
+    );
   });
 });
 

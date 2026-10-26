@@ -1555,6 +1555,11 @@ const locale = {
   discard: 'Descartar',
   retry: 'Reintentar',
   logout_pending_changes_warning:
-    'Hay {{count}} cambios sin enviar. Si cierra sesión ahora, se perderán.'
+    'Hay {{count}} cambios sin enviar. Si cierra sesión ahora, se perderán.',
+  outbox_conflict:
+    'Otra persona lo modificó después que usted. Sobrescriba con su cambio o descártelo.',
+  outbox_conflict_snackbar:
+    'Otra persona modificó esta tarea. Revísela en la orden de trabajo.',
+  overwrite: 'Sobrescribir'
 };
 export default locale;
