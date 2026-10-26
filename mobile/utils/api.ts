@@ -27,7 +27,12 @@ async function performRefresh(): Promise<boolean> {
       body: JSON.stringify({ refreshToken })
     });
     if (!response.ok) {
-      await clearTokens();
+      // Only drop the session when the server actually rejected the refresh
+      // token. Transient failures (5xx from a restarting backend, 502 from the
+      // proxy, 429) must not log the user out.
+      if (isRefreshRejected(response.status)) {
+        await clearTokens();
+      }
       return false;
     }
     const data = await response.json();
@@ -41,9 +46,15 @@ async function performRefresh(): Promise<boolean> {
     }
     return true;
   } catch {
-    await clearTokens();
+    // fetch() throws on network failure (no signal, DNS, timeout). The refresh
+    // token is still valid, so keep it and let the next attempt succeed once
+    // connectivity is back instead of forcing a new login.
     return false;
   }
+}
+
+function isRefreshRejected(status: number): boolean {
+  return status === 400 || status === 401 || status === 403;
 }
 
 export function refreshAccessToken(): Promise<boolean> {
