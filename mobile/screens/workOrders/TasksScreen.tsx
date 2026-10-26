@@ -1,5 +1,6 @@
 import { Task } from '../../models/tasks';
-import { getTasks, patchTask } from '../../slices/task';
+import { getTasks } from '../../slices/task';
+import { submitOperation, SubmitResult } from '../../slices/outbox';
 import { useTranslation } from 'react-i18next';
 import { useContext, useEffect, useState } from 'react';
 import { useDispatch } from '../../store';
@@ -41,8 +42,19 @@ export default function TasksScreen({
 
   function handleChange(value: string | number, id: number) {
     const task = tasks.find((task) => task.id === id);
-    dispatch(patchTask(workOrderId, id, { ...task, value }))
-      .then(() => showSnackBar(t('task_update_success'), 'success'))
+    dispatch(
+      submitOperation({
+        type: 'PATCH_TASK',
+        workOrderId,
+        taskId: id,
+        body: { ...task, value }
+      })
+    )
+      .then((result: SubmitResult) =>
+        result === 'queued'
+          ? showSnackBar(t('change_queued_offline'), 'success')
+          : showSnackBar(t('task_update_success'), 'success')
+      )
       .catch(() => showSnackBar(t('task_update_failure'), 'error'));
 
     const newTasks = tasks.map((task) => {
@@ -72,12 +84,22 @@ export default function TasksScreen({
 
   function handleSaveNotes(value: string, id: number) {
     const task = tasks.find((task) => task.id === id);
-    return dispatch(patchTask(workOrderId, id, { ...task, notes: value })).then(
-      () => {
-        showSnackBar(t('notes_save_success'), 'success');
-        toggleNotes(task.id);
-      }
-    );
+    return dispatch(
+      submitOperation({
+        type: 'PATCH_TASK',
+        workOrderId,
+        taskId: id,
+        body: { ...task, notes: value }
+      })
+    ).then((result: SubmitResult) => {
+      showSnackBar(
+        result === 'queued'
+          ? t('change_queued_offline')
+          : t('notes_save_success'),
+        'success'
+      );
+      toggleNotes(task.id);
+    });
   }
 
   const onImageUploadSuccess = () => {
@@ -114,7 +136,9 @@ export default function TasksScreen({
     const taskId = cameraTaskId;
     setCameraTaskId(null);
     const fileName = uri.split('/').pop() || 'photo.jpg';
-    const files = [{ uri, name: fileName, type: mime.getType(fileName) || 'image/jpeg' }];
+    const files = [
+      { uri, name: fileName, type: mime.getType(fileName) || 'image/jpeg' }
+    ];
     return dispatch(addFiles(files, 'IMAGE', taskId))
       .then(onImageUploadSuccess)
       .then(() => dispatch(getTasks(workOrderId)))
@@ -125,7 +149,10 @@ export default function TasksScreen({
     taskId: number
   ) => {
     if (!result.canceled) {
-      console.warn('[TasksScreen] Picker result -> upload', JSON.stringify({ taskId, assets: result.assets.length }));
+      console.warn(
+        '[TasksScreen] Picker result -> upload',
+        JSON.stringify({ taskId, assets: result.assets.length })
+      );
       return dispatch(addFiles(formatImages(result), 'IMAGE', taskId))
         .then(onImageUploadSuccess)
         .then(() => dispatch(getTasks(workOrderId)))

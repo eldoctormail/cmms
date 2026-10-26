@@ -20,6 +20,7 @@ import { RootStackScreenProps } from '../types';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import { CustomSnackBarContext } from '../contexts/CustomSnackBarContext';
+import { useSelector } from '../store';
 
 export default function SettingsScreen({
   navigation
@@ -33,6 +34,8 @@ export default function SettingsScreen({
   const [openDevInfo, setOpenDevInfo] = useState<boolean>(false);
   const { showSnackBar } = useContext(CustomSnackBarContext);
   const [devMode, setDevMode] = useState<boolean>(false);
+  // Changes made offline and not sent yet are dropped on logout.
+  const unsentChanges = useSelector((state) => state.outbox.entries.length);
   useEffect(() => {
     if (versionPressCount > 2 && versionPressCount < 6) {
       showSnackBar(`Dev mode in ${6 - versionPressCount}`, 'info');
@@ -49,6 +52,14 @@ export default function SettingsScreen({
           <Dialog.Title>{t('confirmation')}</Dialog.Title>
           <Dialog.Content>
             <Text variant="bodyMedium">{t('confirm_logout')}</Text>
+            {!!unsentChanges && (
+              <Text
+                variant="bodyMedium"
+                style={{ color: theme.colors.error, marginTop: 8 }}
+              >
+                {t('logout_pending_changes_warning', { count: unsentChanges })}
+              </Text>
+            )}
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setOpenLogout(false)}>{t('cancel')}</Button>

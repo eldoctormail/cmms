@@ -30,6 +30,8 @@ interface CommentItemProps {
   workOrderId: number;
   highlighted?: boolean;
   users?: { id: string; name: string }[];
+  /** Queued while offline: not on the server yet, so it can't be edited. */
+  pending?: boolean;
 }
 
 const triggersConfig: TriggersConfig<'mention'> = {
@@ -57,7 +59,8 @@ export default function CommentItem({
   comment,
   workOrderId,
   highlighted = false,
-  users = []
+  users = [],
+  pending = false
 }: CommentItemProps) {
   const { t } = useTranslation();
   const theme = useTheme();
@@ -178,7 +181,7 @@ export default function CommentItem({
             navigation.navigate('UserDetails', { id: comment.user?.id })
           }
         >
-          {comment.user.image ? (
+          {comment.user?.image ? (
             <Avatar.Image size={40} source={{ uri: comment.user.image.url }} />
           ) : (
             <Avatar.Text
@@ -217,10 +220,12 @@ export default function CommentItem({
                 style={{ fontSize: 12, color: theme.colors.onSurfaceVariant }}
                 numberOfLines={1}
               >
-                {getFormattedDate(comment.updatedAt || comment.createdAt)}
+                {pending
+                  ? t('pending_sync')
+                  : getFormattedDate(comment.updatedAt || comment.createdAt)}
               </Text>
             </View>
-            {!isSystem && isOwner && !isEditing && (
+            {!isSystem && isOwner && !isEditing && !pending && (
               <View style={{ flexDirection: 'row' }}>
                 <IconButton
                   icon="pencil"

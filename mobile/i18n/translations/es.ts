@@ -1539,6 +1539,22 @@ const locale = {
   offline_banner_never_synced:
     'Sin conexión. Todavía no hay datos guardados para usar sin conexión.',
   offline_work_orders_hint:
-    'Mostrando tus órdenes de trabajo abiertas guardadas para usar sin conexión. Los filtros y la búsqueda requieren conexión.'
+    'Mostrando tus órdenes de trabajo abiertas guardadas para usar sin conexión. Los filtros y la búsqueda requieren conexión.',
+  change_queued_offline:
+    'Guardado en el teléfono. Se enviará cuando vuelva la conexión.',
+  attachments_require_connection:
+    'Los adjuntos requieren conexión. Envíe solo el texto o inténtelo más tarde.',
+  timer_requires_connection:
+    'El cronómetro requiere conexión. Sin conexión, use "Añadir tiempo" para registrar el trabajo.',
+  pending_sync: 'Pendiente de envío',
+  outbox_pending_count: 'Cambios pendientes de envío: {{count}}',
+  outbox_failed: 'No se guardó: {{change}}',
+  outbox_task_change: 'tarea "{{label}}"',
+  outbox_comment: 'comentario "{{content}}"',
+  outbox_time_entry: 'registro de tiempo',
+  discard: 'Descartar',
+  retry: 'Reintentar',
+  logout_pending_changes_warning:
+    'Hay {{count}} cambios sin enviar. Si cierra sesión ahora, se perderán.'
 };
 export default locale;

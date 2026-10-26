@@ -16,5 +16,10 @@
     "jsx": "react-jsx",
     "types": []
   },
-  "exclude": ["node_modules", "babel.config.js", "metro.config.js"]
+  "exclude": [
+    "node_modules",
+    "babel.config.js",
+    "metro.config.js",
+    "**/__tests__/**"
+  ]
 }

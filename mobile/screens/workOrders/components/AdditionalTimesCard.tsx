@@ -22,9 +22,11 @@ import type Labor from '../../../models/labor';
 import type WorkOrder from '../../../models/workOrder';
 import useAuth from '../../../hooks/useAuth';
 import { View } from '../../../components/Themed';
+import { CompanySettingsContext } from '../../../contexts/CompanySettingsContext';
+import type { PendingLabor } from '../../../slices/outbox';
 
 interface AdditionalTimesCardProps {
-  labors: Labor[];
+  labors: (Labor | PendingLabor)[];
   workOrder: WorkOrder;
   navigation: NativeStackNavigationProp<RootStackParamList>;
 }
@@ -39,6 +41,7 @@ export default function AdditionalTimesCard({
   const dispatch = useDispatch();
   const { hasEditPermission, hasFeature } = useAuth();
   const { showSnackBar } = useContext(CustomSnackBarContext);
+  const { getUserNameById } = useContext(CompanySettingsContext);
 
   const canAddTime =
     hasEditPermission(PermissionEntity.WORK_ORDERS, workOrder) &&
@@ -58,21 +61,29 @@ export default function AdditionalTimesCard({
       {!unloggedLabors.length ? (
         <Text style={{ fontWeight: 'bold' }}>{t('no_labor')}</Text>
       ) : (
-        unloggedLabors.map((labor) => (
+        unloggedLabors.map((labor) => {
+          // Queued while offline: only the user id is known and there is no
+          // server id to edit or delete it with yet.
+          const pending = 'pending' in labor && labor.pending;
+          return (
           <View key={labor.id} style={styles.laborRow}>
             <List.Item
               style={styles.laborInfo}
               titleStyle={{ fontSize: 14 }}
               title={
-                labor.assignedTo
+                pending
+                  ? getUserNameById(labor.assignedTo?.id) ?? t('not_assigned')
+                  : labor.assignedTo
                   ? `${labor.assignedTo.firstName} ${labor.assignedTo.lastName}`
                   : t('not_assigned')
               }
               description={`${
                 getHoursAndMinutesAndSeconds(labor.duration)[0]
-              }h ${getHoursAndMinutesAndSeconds(labor.duration)[1]}m`}
+              }h ${getHoursAndMinutesAndSeconds(labor.duration)[1]}m${
+                pending ? ` · ${t('pending_sync')}` : ''
+              }`}
             />
-            {canAddTime && (
+            {canAddTime && !pending && (
               <View style={styles.actions}>
                 <IconButton
                   icon="pencil"
@@ -105,7 +116,8 @@ export default function AdditionalTimesCard({
               </View>
             )}
           </View>
-        ))
+          );
+        })
       )}
       {canAddTime && (
         <Fragment>

@@ -41,6 +41,7 @@ import { reducer as customFieldReducer } from '../slices/customField';
 import { reducer as commentReducer } from '../slices/comment';
 import { reducer as instanceConfigReducer } from '../slices/instanceConfig';
 import { reducer as offlineReducer } from '../slices/offline';
+import { reducer as outboxReducer } from '../slices/outbox';
 
 const rootReducer = combineReducers({
   customers: customerReducer,
@@ -84,7 +85,8 @@ const rootReducer = combineReducers({
   customFields: customFieldReducer,
   comments: commentReducer,
   instanceConfig: instanceConfigReducer,
-  offline: offlineReducer
+  offline: offlineReducer,
+  outbox: outboxReducer
 });
 
 export default rootReducer;

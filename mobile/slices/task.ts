@@ -47,9 +47,9 @@ const slice = createSlice({
       }>
     ) {
       const { task, workOrderId } = action.payload;
-      state.tasksByWorkOrder[workOrderId] = state.tasksByWorkOrder[
-        workOrderId
-      ].map((t) => {
+      state.tasksByWorkOrder[workOrderId] = (
+        state.tasksByWorkOrder[workOrderId] ?? []
+      ).map((t) => {
         if (t.id === task.id) {
           return task;
         }

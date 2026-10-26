@@ -13,6 +13,7 @@ import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import useAuth from '../hooks/useAuth';
 import { useDispatch, useSelector } from '../store';
 import { syncOfflineWorkOrders } from '../slices/offline';
+import { processOutbox } from '../slices/outbox';
 
 /** Re-sync when the app comes to the foreground and the data is older. */
 const FOREGROUND_SYNC_INTERVAL_MS = 15 * 60 * 1000;
@@ -49,10 +50,28 @@ export const OfflineProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
   const canSync = isAuthenticated && !!user;
 
+  const hasQueuedChanges = useSelector((state) =>
+    state.outbox.entries.some((e) => e.status === 'pending')
+  );
+  const hasQueuedChangesRef = useRef(hasQueuedChanges);
+  hasQueuedChangesRef.current = hasQueuedChanges;
+
+  const sendQueuedChanges = useCallback(async () => {
+    if (!canSync) return;
+    try {
+      await dispatch(processOutbox());
+    } catch (error) {
+      console.warn('Sending queued changes failed', error);
+    }
+  }, [canSync, dispatch]);
+
   const syncNow = useCallback(async () => {
     if (!canSync) return;
     setSyncing(true);
     try {
+      // Send what was done offline first, so the data downloaded next
+      // already includes it.
+      await sendQueuedChanges();
       await dispatch(syncOfflineWorkOrders());
     } catch (error) {
       // Keep the previously synced data; the next trigger retries.
@@ -60,7 +79,7 @@ export const OfflineProvider: FC<{ children: ReactNode }> = ({ children }) => {
     } finally {
       setSyncing(false);
     }
-  }, [canSync, dispatch]);
+  }, [canSync, dispatch, sendQueuedChanges]);
 
   // Track connectivity and sync when it comes back.
   useEffect(() => {
@@ -86,9 +105,10 @@ export const OfflineProvider: FC<{ children: ReactNode }> = ({ children }) => {
         ? new Date(syncedAtRef.current).getTime()
         : 0;
       if (Date.now() - lastSync > FOREGROUND_SYNC_INTERVAL_MS) syncNow();
+      else if (hasQueuedChangesRef.current) sendQueuedChanges();
     });
     return () => subscription.remove();
-  }, [syncNow]);
+  }, [syncNow, sendQueuedChanges]);
 
   return (
     <OfflineContext.Provider value={{ isOffline, syncedAt, syncing, syncNow }}>

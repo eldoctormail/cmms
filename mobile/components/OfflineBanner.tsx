@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useOffline } from '../contexts/OfflineContext';
 import { CompanySettingsContext } from '../contexts/CompanySettingsContext';
 import { useAppTheme } from '../custom-theme';
+import { useSelector } from '../store';
 
 /** Shown on screens that fall back to data saved for offline use. */
 export default function OfflineBanner({ hint }: { hint?: string }) {
@@ -12,6 +13,9 @@ export default function OfflineBanner({ hint }: { hint?: string }) {
   const theme = useAppTheme();
   const { isOffline, syncedAt } = useOffline();
   const { getFormattedDate } = useContext(CompanySettingsContext);
+  const queuedCount = useSelector(
+    (state) => state.outbox.entries.filter((e) => e.status === 'pending').length
+  );
 
   if (!isOffline) return null;
 
@@ -33,6 +37,14 @@ export default function OfflineBanner({ hint }: { hint?: string }) {
             ? t('offline_banner_synced', { date: getFormattedDate(syncedAt) })
             : t('offline_banner_never_synced')}
         </Text>
+        {!!queuedCount && (
+          <Text
+            variant="bodySmall"
+            style={{ color: theme.colors.onErrorContainer, marginTop: 2 }}
+          >
+            {t('outbox_pending_count', { count: queuedCount })}
+          </Text>
+        )}
         {!!hint && (
           <Text
             variant="bodySmall"

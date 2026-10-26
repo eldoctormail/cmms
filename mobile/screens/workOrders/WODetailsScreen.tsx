@@ -38,6 +38,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState
 } from 'react';
@@ -49,6 +50,15 @@ import useAuth from '../../hooks/useAuth';
 import { controlTimer, getLabors } from '../../slices/labor';
 import { useDispatch, useSelector } from '../../store';
 import OfflineBanner from '../../components/OfflineBanner';
+import OutboxStatus from '../../components/OutboxStatus';
+import { useOffline } from '../../contexts/OfflineContext';
+import {
+  mergePendingComments,
+  mergePendingLabors,
+  mergePendingTasks,
+  submitOperation,
+  SubmitResult
+} from '../../slices/outbox';
 import { durationToHours } from '../../utils/formatters';
 import {
   editWOPartQuantities,
@@ -81,7 +91,7 @@ import ImageView from 'react-native-image-viewing';
 import { getCustomFieldValuesForDetails } from '../../models/form';
 import CommentItem from '../../components/CommentItem';
 import { downloadFile } from '../../utils/fileDownload';
-import { getCommentsByWorkOrder, createComment } from '../../slices/comment';
+import { getCommentsByWorkOrder } from '../../slices/comment';
 import { getUsersMini } from '../../slices/user';
 import { TriggersConfig } from 'react-native-controlled-mentions/dist/types/types';
 import { useHeaderHeight } from '@react-navigation/elements';
@@ -163,7 +173,13 @@ export default function WODetailsScreen({
   const { tasksByWorkOrder, loadingTasks } = useSelector(
     (state) => state.tasks
   );
-  const tasks = tasksByWorkOrder[id] ?? [];
+  // Changes queued while offline are shown as if already saved.
+  const outboxEntries = useSelector((state) => state.outbox.entries);
+  const { isOffline } = useOffline();
+  const tasks = useMemo(
+    () => mergePendingTasks(tasksByWorkOrder[id] ?? [], outboxEntries, id),
+    [tasksByWorkOrder[id], outboxEntries, id]
+  );
   const currentWorkOrderRelations = relationsByWorkOrder[id] ?? [];
   const { costsByWorkOrder, loadingCosts } = useSelector(
     (state) => state.additionalCosts
@@ -171,7 +187,10 @@ export default function WODetailsScreen({
   const { timesByWorkOrder, loadingLabors } = useSelector(
     (state) => state.labors
   );
-  const labors = timesByWorkOrder[id] ?? [];
+  const labors = useMemo(
+    () => mergePendingLabors(timesByWorkOrder[id] ?? [], outboxEntries, id),
+    [timesByWorkOrder[id], outboxEntries, id]
+  );
   const primaryTime = labors.find(
     (labor) => labor.logged && labor.assignedTo.id === user.id
   );
@@ -189,7 +208,11 @@ export default function WODetailsScreen({
     (state) => state.comments
   );
   const { usersMini } = useSelector((state) => state.users);
-  const comments = commentsByWorkOrder[id] ?? [];
+  const comments = useMemo(
+    () =>
+      mergePendingComments(commentsByWorkOrder[id] ?? [], outboxEntries, id),
+    [commentsByWorkOrder[id], outboxEntries, id]
+  );
   const statuses = ['OPEN', 'ON_HOLD', 'IN_PROGRESS', 'COMPLETE'].map(
     (status) => ({ value: status, label: t(status) })
   );
@@ -592,23 +615,42 @@ export default function WODetailsScreen({
 
   const handleCommentSubmit = async () => {
     if (!commentContent.trim()) return;
+    if (commentFiles.length > 0 && isOffline) {
+      // Uploading files needs the server; only the text can be queued.
+      showSnackBar(t('attachments_require_connection'), 'error');
+      return;
+    }
     try {
       let fileIds: { id: number }[] = [];
       if (commentFiles.length > 0) {
         const uploadedFiles = await uploadFiles(commentFiles, [], false);
         fileIds = uploadedFiles.map((f) => ({ id: f.id }));
       }
-      await dispatch(
-        createComment({
-          workOrder: { id },
-          content: commentContent.trim(),
-          files: fileIds
+      const result: SubmitResult = await dispatch(
+        submitOperation({
+          type: 'CREATE_COMMENT',
+          workOrderId: id,
+          body: {
+            workOrder: { id },
+            content: commentContent.trim(),
+            files: fileIds
+          },
+          author: {
+            id: user.id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            image: user.image,
+            phone: user.phone
+          }
         })
       );
+      if (result === 'queued')
+        showSnackBar(t('change_queued_offline'), 'success');
       setCommentContent('');
       setCommentFiles([]);
     } catch (error) {
       console.error('Failed to create comment:', error);
+      showSnackBar(getErrorMessage(error), 'error');
     }
   };
 
@@ -822,6 +864,7 @@ export default function WODetailsScreen({
               }
             >
               <OfflineBanner />
+              <OutboxStatus workOrderId={id} />
               <Text style={{ marginTop: 5 }} variant="displaySmall">
                 {workOrder.title}
               </Text>
@@ -1210,6 +1253,7 @@ export default function WODetailsScreen({
                           <CommentItem
                             key={comment.id}
                             comment={comment}
+                            pending={'pending' in comment && comment.pending}
                             workOrderId={id}
                             users={usersMini.map((u) => ({
                               id: u.id.toString(),
@@ -1348,6 +1392,12 @@ export default function WODetailsScreen({
                 variant={runningTimer ? 'primary' : 'secondary'}
                 color="white"
                 onPress={() => {
+                  // The server stamps start/stop with its own clock, so the
+                  // timer can't be queued; use "add time" while offline.
+                  if (isOffline) {
+                    showSnackBar(t('timer_requires_connection'), 'error');
+                    return;
+                  }
                   setControllingTime(true);
                   dispatch(controlTimer(!runningTimer, id))
                     .catch((err) => showSnackBar(getErrorMessage(err), 'error'))

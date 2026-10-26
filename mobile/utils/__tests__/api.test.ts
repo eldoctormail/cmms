@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { refreshAccessToken } from '../api';
+import api, { refreshAccessToken } from '../api';
 
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock')
@@ -68,4 +68,32 @@ describe('refreshAccessToken', () => {
       expect(await AsyncStorage.getItem('refreshToken')).toBeNull();
     }
   );
+});
+
+describe('idempotency key', () => {
+  beforeEach(async () => {
+    mockFetch.mockReset();
+    await AsyncStorage.clear();
+    await AsyncStorage.setItem('accessToken', 'token');
+  });
+
+  it('is sent as a header next to the authorization', async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse(200, { id: 1 }));
+    await api.post('comments', { content: 'x' }, { idempotencyKey: 'k-1' });
+
+    const [, init] = mockFetch.mock.calls[0];
+    expect(init.headers).toMatchObject({
+      Authorization: 'Bearer token',
+      'Idempotency-Key': 'k-1'
+    });
+    expect(init).not.toHaveProperty('idempotencyKey');
+  });
+
+  it('is not sent unless requested', async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse(200, {}));
+    await api.post('comments', { content: 'x' });
+    expect(mockFetch.mock.calls[0][1].headers).not.toHaveProperty(
+      'Idempotency-Key'
+    );
+  });
 });

@@ -8,7 +8,7 @@ import Form from '../../components/form';
 import { formatSelect } from '../../utils/formatters';
 import { RootStackScreenProps } from '../../types';
 import { useDispatch } from '../../store';
-import { createLabor } from '../../slices/labor';
+import { submitOperation, SubmitResult } from '../../slices/outbox';
 import { getErrorMessage } from '../../utils/api';
 import { useContext } from 'react';
 import { CustomSnackBarContext } from '../../contexts/CustomSnackBarContext';
@@ -93,9 +93,19 @@ export default function CreateAdditionalTime({
             formattedValues.timeCategory
           );
           formattedValues.duration = values.hours * 3600 + values.minutes * 60;
+          if (formattedValues.startedAt instanceof Date)
+            formattedValues.startedAt = formattedValues.startedAt.toISOString();
           return dispatch(
-            createLabor(route.params.workOrderId, formattedValues)
+            submitOperation({
+              type: 'CREATE_LABOR',
+              workOrderId: route.params.workOrderId,
+              body: formattedValues
+            })
           )
+            .then((result: SubmitResult) => {
+              if (result === 'queued')
+                showSnackBar(t('change_queued_offline'), 'success');
+            })
             .catch((err) => showSnackBar(getErrorMessage(err), 'error'))
             .finally(() => navigation.goBack());
         }}

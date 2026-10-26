@@ -2,7 +2,15 @@ import { getApiUrl } from '../config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-type Options = RequestInit & { raw?: boolean; headers?: HeadersInit };
+type Options = RequestInit & {
+  raw?: boolean;
+  headers?: HeadersInit;
+  /**
+   * Sent as the Idempotency-Key header so a request retried after a lost
+   * response (e.g. from the offline outbox) can be recognized server side.
+   */
+  idempotencyKey?: string;
+};
 
 let refreshPromise: Promise<boolean> | null = null;
 
@@ -84,10 +92,15 @@ async function doFetch<T>(
   options: Options,
   retried: boolean
 ): Promise<T> {
-  const response = await fetch(url, {
-    headers: await authHeader(false),
-    ...options
-  });
+  const { idempotencyKey, ...init } = options ?? {};
+  const baseHeaders = (init.headers ?? (await authHeader(false))) as Record<
+    string,
+    string
+  >;
+  const headers = idempotencyKey
+    ? { ...baseHeaders, 'Idempotency-Key': idempotencyKey }
+    : baseHeaders;
+  const response = await fetch(url, { ...init, headers });
   if (!response.ok) {
     if (response.status === 401 && !retried && !isRefreshRequest(url)) {
       const refreshed = await refreshAccessToken();
@@ -97,7 +110,9 @@ async function doFetch<T>(
     }
     if (response.status === 409) {
       if (onConflictError) onConflictError();
-      throw new Error('conflict_error');
+      const conflict = new Error('conflict_error');
+      (conflict as any).status = 409;
+      throw conflict;
     }
     let body: any = null;
     try {

@@ -1509,6 +1509,22 @@ const locale = {
   offline_banner_never_synced:
     'Offline. No data has been saved for offline use yet.',
   offline_work_orders_hint:
-    'Showing your open work orders saved for offline use. Filters and search need a connection.'
+    'Showing your open work orders saved for offline use. Filters and search need a connection.',
+  change_queued_offline:
+    'Saved on this device. It will be sent when the connection is back.',
+  attachments_require_connection:
+    'Attachments need a connection. Send the text only or try again later.',
+  timer_requires_connection:
+    'The timer needs a connection. Use "Add Time" to log work while offline.',
+  pending_sync: 'Waiting to be sent',
+  outbox_pending_count: 'Changes waiting to be sent: {{count}}',
+  outbox_failed: 'Not saved: {{change}}',
+  outbox_task_change: 'task "{{label}}"',
+  outbox_comment: 'comment "{{content}}"',
+  outbox_time_entry: 'time entry',
+  discard: 'Discard',
+  retry: 'Retry',
+  logout_pending_changes_warning:
+    'There are {{count}} changes not sent yet. If you log out now they will be lost.'
 };
 export default locale;
